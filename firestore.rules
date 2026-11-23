@@ -1,0 +1,154 @@
+rules_version = '2';
+
+// QuemFoi? regras de acesso.
+// O site é estático e fala direto com o Firestore. Cada navegador entra com login
+// anônimo. Quem abre um link secreto prova que tem o token e passa a ter acesso:
+//   - link do organizador  -> groups/{g}/admins/{uid}
+//   - link pessoal         -> groups/{g}/members/{uid}
+// Modelo completo em src/lib/db/schema.ts.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() { return request.auth != null; }
+    function doc(p) { return path("/databases/" + database + "/documents/" + p); }
+
+    function isAdmin(g) {
+      return signedIn() && exists(doc("groups/" + g + "/admins/" + request.auth.uid));
+    }
+    function isMember(g) {
+      return signedIn() && exists(doc("groups/" + g + "/members/" + request.auth.uid));
+    }
+    function myPid(g) {
+      return get(doc("groups/" + g + "/members/" + request.auth.uid)).data.participantId;
+    }
+    function memberAfter(g) {
+      return getAfter(doc("groups/" + g + "/members/" + request.auth.uid));
+    }
+    function group(g) { return get(doc("groups/" + g)).data; }
+    function isOpen(g) { return group(g).status == "open"; }
+
+    function validToken(t) { return t is string && t.size() >= 20; }
+    function onlyKeys(keys) { return request.resource.data.keys().hasOnly(keys); }
+    function changedOnly(keys) {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(keys);
+    }
+
+    function validGroup() {
+      let d = request.resource.data;
+      return onlyKeys(["name", "description", "budgetCents", "exchangeDate", "allowSelfJoin", "status"])
+        && d.name is string && d.name.size() >= 1 && d.name.size() <= 120
+        && d.allowSelfJoin is bool
+        && d.status in ["open", "drawn"]
+        && (!("description" in d) || (d.description is string && d.description.size() <= 1000))
+        && (!("budgetCents" in d) || (d.budgetCents is int && d.budgetCents >= 0))
+        && (!("exchangeDate" in d) || d.exchangeDate is string);
+    }
+
+    function validParticipant() {
+      let d = request.resource.data;
+      return onlyKeys(["name", "wishlist"])
+        && d.name is string && d.name.size() >= 1 && d.name.size() <= 80
+        && (!("wishlist" in d) || (d.wishlist is string && d.wishlist.size() <= 2000));
+    }
+
+    match /groups/{g} {
+      // O id do grupo é longo e aleatório e vai no link de convite.
+      allow get: if signedIn();
+      allow list: if false;
+      // Criado junto com private/admin e admins/{uid}, no mesmo lote.
+      allow create: if signedIn() && validGroup() && request.resource.data.status == "open"
+        && existsAfter(doc("groups/" + g + "/private/admin"))
+        && existsAfter(doc("groups/" + g + "/admins/" + request.auth.uid));
+      allow update: if isAdmin(g) && validGroup();
+      allow delete: if isAdmin(g);
+
+      // Segredo do organizador. Ninguém lê; só as regras consultam.
+      match /private/admin {
+        allow read: if false;
+        allow create: if signedIn() && !exists(doc("groups/" + g))
+          && onlyKeys(["token"]) && validToken(request.resource.data.token);
+      }
+
+      // Aparelho que provou ter o link do organizador.
+      match /admins/{uid} {
+        allow get: if signedIn() && request.auth.uid == uid;
+        allow create: if signedIn() && request.auth.uid == uid && onlyKeys(["token"])
+          && request.resource.data.token == getAfter(doc("groups/" + g + "/private/admin")).data.token;
+      }
+
+      match /participants/{p} {
+        allow read: if isAdmin(g) || isMember(g);
+        allow create: if validParticipant() && isOpen(g) && (
+          isAdmin(g)
+          // Cadastro pelo convite: cria participante, segredo e vínculo no mesmo lote.
+          || (signedIn() && group(g).allowSelfJoin == true
+              && memberAfter(g).data.participantId == p)
+        );
+        allow update: if validParticipant() && (
+          isAdmin(g) || (isMember(g) && myPid(g) == p && changedOnly(["wishlist"]))
+        );
+        allow delete: if isAdmin(g) && isOpen(g);
+      }
+
+      // Segredo do link pessoal. Só o organizador lê (para poder enviar os links).
+      match /participantSecrets/{p} {
+        allow read: if isAdmin(g);
+        allow create: if onlyKeys(["token"]) && validToken(request.resource.data.token)
+          && !exists(doc("groups/" + g + "/participants/" + p))
+          && existsAfter(doc("groups/" + g + "/participants/" + p))
+          && (isAdmin(g) || (signedIn() && memberAfter(g).data.participantId == p));
+        allow delete: if isAdmin(g);
+      }
+
+      // Aparelho que abriu um link pessoal. Abrir outro link no mesmo aparelho troca a pessoa.
+      match /members/{uid} {
+        allow get: if signedIn() && request.auth.uid == uid;
+        allow create, update: if signedIn() && request.auth.uid == uid
+          && onlyKeys(["participantId", "token"])
+          && request.resource.data.participantId is string
+          && request.resource.data.token == getAfter(doc("groups/" + g + "/participantSecrets/"
+               + request.resource.data.participantId)).data.token;
+      }
+
+      match /rules/{r} {
+        allow read, write: if isAdmin(g);
+      }
+
+      // Resultado do sorteio. Só quem tirou lê o seu.
+      match /assignments/{giver} {
+        allow get: if isMember(g) && myPid(g) == giver;
+        allow list: if false;
+        allow write: if isAdmin(g);
+      }
+
+      // Para quem recebe conseguir responder sem saber quem é o amigo secreto.
+      match /inbox/{receiver} {
+        allow get: if isMember(g) && myPid(g) == receiver;
+        allow list: if false;
+        allow write: if isAdmin(g);
+      }
+
+      // Quem conversa em cada conversa. Ninguém lê; só as regras consultam.
+      match /threadMeta/{t} {
+        allow read: if false;
+        allow write: if isAdmin(g);
+      }
+
+      match /threads/{t}/messages/{m} {
+        function meta() { return get(doc("groups/" + g + "/threadMeta/" + t)).data; }
+        function inThread() {
+          return isMember(g) && (myPid(g) == meta().giverId || myPid(g) == meta().receiverId);
+        }
+        allow read: if inThread();
+        allow create: if inThread()
+          && onlyKeys(["fromGiver", "body", "createdAt"])
+          && request.resource.data.fromGiver == (myPid(g) == meta().giverId)
+          && request.resource.data.body is string
+          && request.resource.data.body.size() >= 1 && request.resource.data.body.size() <= 1000
+          && request.resource.data.createdAt == request.time;
+        allow update, delete: if false;
+      }
+    }
+  }
+}
