@@ -4,16 +4,29 @@ Site para organizar amigos secretos: crie um grupo, chame a turma por link de co
 (ou cadastre os nomes você mesmo), defina regras e faça o sorteio. Cada pessoa recebe
 um link pessoal e vê só quem tirou.
 
-Feito com **Next.js** + **Supabase**, publicado na **Vercel**.
+Feito com **Next.js** + **Firebase (Firestore)**, publicado na **Vercel**.
+
+## Configurando o Firebase
+
+1. Crie um projeto grátis em [console.firebase.google.com](https://console.firebase.google.com).
+2. Em **Build → Firestore Database**, clique em **Criar banco de dados**
+   (modo de produção, região `southamerica-east1` se quiser São Paulo).
+3. Publique as regras e índices deste repositório. Pelo terminal:
+
+   ```bash
+   npx firebase-tools login
+   npx firebase-tools deploy --only firestore --project SEU-PROJETO
+   ```
+
+   Ou cole o conteúdo de [`firestore.rules`](firestore.rules) na aba **Regras** do Firestore.
+4. Em **Configurações do projeto → Contas de serviço**, clique em
+   **Gerar nova chave privada** e guarde o JSON (ele é secreto).
 
 ## Rodando localmente
 
-1. Crie um projeto grátis em [supabase.com](https://supabase.com).
-2. No painel do Supabase, abra **SQL Editor**, cole o conteúdo de
-   [`supabase/migrations/0001_init.sql`](supabase/migrations/0001_init.sql) e rode.
-3. Copie `.env.example` para `.env.local` e preencha com os dados de
-   **Project Settings → API** (URL e chave `service_role`).
-4. Rode:
+1. Copie `.env.example` para `.env.local` e preencha com os campos do JSON
+   (`project_id`, `client_email`, `private_key`).
+2. Rode:
 
    ```bash
    npm install
@@ -33,8 +46,9 @@ Feito com **Next.js** + **Supabase**, publicado na **Vercel**.
 
 Não há login. O organizador recebe um link de administração secreto, e cada
 participante recebe um link pessoal secreto. Todas as consultas ao banco passam
-pelo servidor com a chave `service_role`; o banco tem RLS ligado sem políticas
-públicas, então nada fica exposto pelo navegador.
+pelo servidor com a conta de serviço do Firebase; as regras do Firestore bloqueiam
+qualquer acesso direto pelo navegador. O modelo de dados está em
+[`src/lib/db/schema.ts`](src/lib/db/schema.ts).
 
 ## Roteiro
 
