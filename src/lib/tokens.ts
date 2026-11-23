@@ -1,15 +1,18 @@
-import { randomBytes } from "node:crypto";
-
-/** Token secreto para links (organizador e participantes). */
+/** Token secreto para links (organizador e participantes). Funciona no navegador. */
 export function newToken(bytes = 24): string {
-  return randomBytes(bytes).toString("base64url");
+  const buf = new Uint8Array(bytes);
+  crypto.getRandomValues(buf);
+  let bin = "";
+  for (const b of buf) bin += String.fromCharCode(b);
+  return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
-/** Código curto e legível para o link de convite do grupo. */
-export function newInviteCode(length = 8): string {
-  const alphabet = "abcdefghjkmnpqrstuvwxyz23456789";
-  const buf = randomBytes(length);
+/** Id aleatório e longo para documentos cujo id funciona como segredo (ex.: grupo). */
+export function newId(length = 20): string {
+  const alphabet = "abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  const buf = new Uint8Array(length);
+  crypto.getRandomValues(buf);
   let out = "";
-  for (let i = 0; i < length; i++) out += alphabet[buf[i] % alphabet.length];
+  for (const b of buf) out += alphabet[b % alphabet.length];
   return out;
 }

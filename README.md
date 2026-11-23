@@ -4,51 +4,57 @@ Site para organizar amigos secretos: crie um grupo, chame a turma por link de co
 (ou cadastre os nomes você mesmo), defina regras e faça o sorteio. Cada pessoa recebe
 um link pessoal e vê só quem tirou.
 
-Feito com **Next.js** + **Firebase (Firestore)**, publicado na **Vercel**.
+Feito com **Next.js** (site estático) + **Firebase** (Firestore e login anônimo),
+publicado de graça no **GitHub Pages**.
 
-## Configurando o Firebase
+## Configurando o Firebase (uma vez)
 
-1. Crie um projeto grátis em [console.firebase.google.com](https://console.firebase.google.com).
-2. Em **Build → Firestore Database**, clique em **Criar banco de dados**
-   (modo de produção, região `southamerica-east1` se quiser São Paulo).
-3. Publique as regras e índices deste repositório. Pelo terminal:
+1. Crie um projeto grátis em [console.firebase.google.com](https://console.firebase.google.com)
+   (o plano gratuito Spark basta).
+2. **Build → Authentication → Começar**, e ative o provedor **Anônimo**.
+3. **Build → Firestore Database → Criar banco de dados**, modo de produção
+   (região `southamerica-east1` se quiser São Paulo).
+4. Na aba **Regras** do Firestore, cole o conteúdo de [`firestore.rules`](firestore.rules) e publique.
+5. Em **Configurações do projeto → Seus apps**, adicione um app **Web** (`</>`).
+   Guarde os valores `apiKey`, `authDomain`, `projectId` e `appId`.
+6. Em **Authentication → Configurações → Domínios autorizados**, adicione
+   `SEU-USUARIO.github.io`.
 
-   ```bash
-   npx firebase-tools login
-   npx firebase-tools deploy --only firestore --project SEU-PROJETO
-   ```
+## Publicando no GitHub Pages (uma vez)
 
-   Ou cole o conteúdo de [`firestore.rules`](firestore.rules) na aba **Regras** do Firestore.
-4. Em **Configurações do projeto → Contas de serviço**, clique em
-   **Gerar nova chave privada** e guarde o JSON (ele é secreto).
+1. No repositório, **Settings → Pages → Source: GitHub Actions**.
+2. **Settings → Secrets and variables → Actions → aba Variables**, crie:
+   `FIREBASE_API_KEY`, `FIREBASE_AUTH_DOMAIN`, `FIREBASE_PROJECT_ID`, `FIREBASE_APP_ID`
+   com os valores do passo 5 acima.
+3. A cada merge na `main`, o site é publicado em
+   `https://SEU-USUARIO.github.io/NOME-DO-REPOSITORIO/`.
 
 ## Rodando localmente
 
-1. Copie `.env.example` para `.env.local` e preencha com os campos do JSON
-   (`project_id`, `client_email`, `private_key`).
-2. Rode:
+```bash
+cp .env.example .env.local   # preencha com os valores do app web
+npm install
+npm run dev
+```
 
-   ```bash
-   npm install
-   npm run dev
-   ```
+Testes das regras de segurança (precisa de Java instalado):
 
-   e abra http://localhost:3000.
-
-## Publicando na Vercel
-
-1. Em [vercel.com/new](https://vercel.com/new), importe este repositório.
-2. Em **Environment Variables**, adicione as mesmas variáveis do `.env.example`
-   (`NEXT_PUBLIC_SITE_URL` com o endereço final do site).
-3. Clique em **Deploy**. A cada merge na `main` o site é atualizado.
+```bash
+npm run test:rules
+```
 
 ## Como o acesso funciona
 
-Não há login. O organizador recebe um link de administração secreto, e cada
-participante recebe um link pessoal secreto. Todas as consultas ao banco passam
-pelo servidor com a conta de serviço do Firebase; as regras do Firestore bloqueiam
-qualquer acesso direto pelo navegador. O modelo de dados está em
+Não há cadastro com senha. Cada navegador entra com login anônimo do Firebase.
+O organizador recebe um link secreto de administração e cada participante um link
+pessoal secreto; abrir o link prova ao Firebase que a pessoa tem aquele acesso.
+As regras em [`firestore.rules`](firestore.rules) garantem que cada um veja só o que
+é seu (por exemplo, só você vê quem tirou), e os testes em
+[`tests/`](tests/firestore.rules.test.mjs) verificam isso. O modelo de dados está em
 [`src/lib/db/schema.ts`](src/lib/db/schema.ts).
+
+Como o sorteio é feito no navegador do organizador, quem organiza tecnicamente
+poderia descobrir o resultado. O site não mostra isso a ninguém.
 
 ## Roteiro
 

@@ -1,15 +1,20 @@
 /**
- * Modelo de dados no Firestore.
+ * Modelo de dados no Firestore (veja firestore.rules para quem pode o quê).
  *
- * groups/{groupId}
- *   participants/{participantId}
- *   rules/{ruleId}
- *   assignments/{giverId}        resultado do sorteio (quem tirou quem)
- *   messages/{messageId}         mensagens anônimas
+ * groups/{groupId}                      dados do grupo; o id vai no link de convite
+ *   private/admin                       { token } segredo do organizador (ninguém lê)
+ *   admins/{uid}                        { token } aparelho que provou ser organizador
+ *   participants/{pid}                  nome e lista de desejos (visível ao grupo)
+ *   participantSecrets/{pid}            { token } segredo do link pessoal (só o organizador lê)
+ *   members/{uid}                       { participantId, token } aparelho que abriu um link pessoal
+ *   rules/{ruleId}                      regras do sorteio (só o organizador)
+ *   assignments/{giverPid}              { receiverId, threadId } só quem tirou lê
+ *   inbox/{receiverPid}                 { threadId } para quem recebe responder sem saber quem é
+ *   threads/{threadId}/messages/{mid}   mensagens anônimas entre amigo e amigo secreto
+ *   threadMeta/{threadId}               { giverId, receiverId } ninguém lê; usado pelas regras
  *
- * Os caminhos ficam em `paths` para não espalhar strings pelo código.
+ * "uid" é o usuário anônimo do Firebase Auth daquele navegador.
  */
-import type { Timestamp } from "firebase-admin/firestore";
 
 export type GroupStatus = "open" | "drawn";
 
@@ -20,25 +25,14 @@ export interface Group {
   budgetCents?: number;
   /** Data da troca, no formato AAAA-MM-DD. */
   exchangeDate?: string;
-  /** Quem tem este token administra o grupo (link secreto do organizador). */
-  adminToken: string;
-  /** Código do link de convite. */
-  inviteCode: string;
   /** Se as pessoas podem se cadastrar sozinhas pelo convite. */
   allowSelfJoin: boolean;
   status: GroupStatus;
-  drawnAt?: Timestamp;
-  createdAt: Timestamp;
 }
 
 export interface Participant {
   name: string;
-  email?: string;
-  phone?: string;
-  /** Link pessoal para ver quem tirou, lista de desejos e mensagens. */
-  accessToken: string;
   wishlist?: string;
-  createdAt: Timestamp;
 }
 
 /**
@@ -54,27 +48,29 @@ export interface Rule {
   aId: string;
   bId: string;
   note?: string;
-  createdAt: Timestamp;
 }
 
-/** Documento com id = giverId. */
 export interface Assignment {
   receiverId: string;
+  threadId: string;
 }
 
-/** O app nunca mostra ao destinatário quem é o remetente. */
 export interface Message {
-  senderId: string;
-  recipientId: string;
+  /** true quando quem escreveu foi o amigo secreto (quem deu o presente). */
+  fromGiver: boolean;
   body: string;
-  createdAt: Timestamp;
 }
 
 export const paths = {
-  groups: "groups",
-  group: (groupId: string) => `groups/${groupId}`,
-  participants: (groupId: string) => `groups/${groupId}/participants`,
-  rules: (groupId: string) => `groups/${groupId}/rules`,
-  assignments: (groupId: string) => `groups/${groupId}/assignments`,
-  messages: (groupId: string) => `groups/${groupId}/messages`,
+  group: (g: string) => `groups/${g}`,
+  adminSecret: (g: string) => `groups/${g}/private/admin`,
+  admin: (g: string, uid: string) => `groups/${g}/admins/${uid}`,
+  participants: (g: string) => `groups/${g}/participants`,
+  participantSecret: (g: string, p: string) => `groups/${g}/participantSecrets/${p}`,
+  member: (g: string, uid: string) => `groups/${g}/members/${uid}`,
+  rules: (g: string) => `groups/${g}/rules`,
+  assignment: (g: string, giver: string) => `groups/${g}/assignments/${giver}`,
+  inbox: (g: string, receiver: string) => `groups/${g}/inbox/${receiver}`,
+  threadMeta: (g: string, t: string) => `groups/${g}/threadMeta/${t}`,
+  messages: (g: string, t: string) => `groups/${g}/threads/${t}/messages`,
 } as const;
